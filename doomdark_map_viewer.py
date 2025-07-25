@@ -10,9 +10,11 @@ MAP_SIZE = MAP_WIDTH * MAP_HEIGHT
 
 class MapTools :
 
-    def __init__(self, file_path) :
+    def __init__(self, file_path, base_address=0x4000, skip_bytes=27) :
         self.make_terrain_data() 
         self.file_path = file_path
+        self.base_address = base_address
+        self.skip_bytes = skip_bytes
 
     #-------------------------------------------------------------------
     #
@@ -52,7 +54,7 @@ class MapTools :
             data = f.read()
         offset = data.find(sequence)
         if offset != -1 :
-            sna_adjusted_offset = offset + 0x4000 - 27 # SNA has 27 bytes at start then starts at address 0x4000
+            sna_adjusted_offset = offset + self.base_address - self.skip_bytes # SNA has 27 bytes at start then starts at address 0x4000
             print(f'Found sequence at offset 0x{sna_adjusted_offset:04X}')
             chunk = data[offset : offset + 6144]
             return chunk
@@ -68,6 +70,13 @@ class MapTools :
     #-------------------------------------------------------------------
     def draw_map_image(self, map_data, output_file='map.png'):
         print(f"Creating map as PNG : {output_file}")
+        
+        try:
+            os.makedirs('./map/png', exist_ok=True)
+        except:
+            print('Cannot create png map folder')
+            exit(1)
+
         img_width = MAP_WIDTH * TILE_SIZE
         img_height = MAP_HEIGHT * TILE_SIZE
         image = Image.new('RGBA', (img_width, img_height), color=(0, 0, 0, 255))
@@ -114,6 +123,11 @@ class MapTools :
     #-------------------------------------------------------------------
     def export_map_html(self, map_data, output_file='map.html'):
         print(f"Creating map as HTML : {output_file}")
+        try:
+            os.makedirs('./map/html', exist_ok=True)
+        except:
+            print('Cannot create HTML map folder')
+            exit(1)
         tile_size = TILE_SIZE  # For consistency
         width = MAP_WIDTH
         height = MAP_HEIGHT
@@ -124,7 +138,8 @@ class MapTools :
             r, g, b = color
             style = f"background-color: rgb({r},{g},{b});"
             if filename:
-                path = os.path.join("graphics", filename)
+                # path = os.path.join("graphics", filename)
+                path = os.path.relpath(os.path.join("graphics", filename), os.path.dirname(output_file))
                 # Use relative path so browser can load it
                 # style += f" background-image: url('{path}'); background-size: cover; background-position: center;"
                 style += (
@@ -193,8 +208,10 @@ class MapTools :
 
 class CharacterPosition :
 
-    def __init__(self, characterName=None) :
+    def __init__(self, characterName=None, base_address=0x4000, skip_bytes=27) :
         self.main_chars = ['Luxor', 'Morkin', 'Tarithel', 'Rorthron', 'Shareth']
+        self.base_address = base_address
+        self.skip_bytes = skip_bytes
 
     #-------------------------------------------------------------------
     #
@@ -217,8 +234,8 @@ class CharacterPosition :
                   "Ay", "Ak", "Arg", "And", "Ane", "Esh", "Ad", "Un")
 
         if index > 4 :
-            fortress_x = self.location_data[0x9C00-0x4000+index]
-            fortress_y = self.location_data[0x9C80-0x4000+index]
+            fortress_x = self.location_data[0x9C00-self.base_address+index]
+            fortress_y = self.location_data[0x9C80-self.base_address+index]
             name_code = 444 * (( fortress_y * 64 ) + fortress_x ) % 6151
             end_idx     = name_code & 0x000F
             mid_idx     = (name_code & 0x00F0) >> 4
@@ -232,9 +249,9 @@ class CharacterPosition :
     def GetCharIndex(self, characterName) :
         self.charIndex = self.main_chars.index(characterName)
 
-    def read_all_characters_location_data(self, file_path, base_address=0x4000, skip_bytes=27):
+    def read_all_characters_location_data(self, file_path):
         with open(file_path, 'rb') as f:
-            data = f.read()[skip_bytes:]
+            data = f.read()[self.skip_bytes:]
         # You can now treat `data[offset]` as memory at address `base_address + offset`
         self.location_data = data
 
@@ -257,7 +274,7 @@ class CharacterPosition :
             "Heartstealer",
             "Dwarf"
         )
-        race_idx = self.location_data[0xA000-0x4000+index]
+        race_idx = self.location_data[0xA000-self.base_address+index]
 
         return Races[race_idx]
 
@@ -268,17 +285,25 @@ class CharacterPosition :
             print('Error - No Race Stats Generated Yet')
 
     def report_character_position(self, characterName=None, dumpAll=None) :
+        
         if characterName != None :
             charIndex = self.GetCharIndex(characterName=characterName)
-            self.x = self.location_data[0xA100-0x4000+self.charIndex]
-            self.y = self.location_data[0xA180-0x4000+self.charIndex]
+            self.x = self.location_data[0xA100-self.base_address+self.charIndex]
+            self.y = self.location_data[0xA180-self.base_address+self.charIndex]
             print(f'Character {characterName} is at location x: {self.x}, y: {self.y}')
+        
         elif dumpAll != None :
             idx = 0
             self.racestats = {}
+        
+            print("")
+            print("-------------------------------------------------------------------------")
+            print(f"All character positions for file {dayfile}")
+            print("-------------------------------------------------------------------------")
+
             while idx < 128 :
-                self.x = self.location_data[0xA100-0x4000+idx]
-                self.y = self.location_data[0xA180-0x4000+idx]
+                self.x = self.location_data[0xA100-self.base_address+idx]
+                self.y = self.location_data[0xA180-self.base_address+idx]
                 character_name = self.get_character_name(index=idx)
                 race = self.get_character_race(index=idx)
                 if race not in self.racestats :
@@ -288,16 +313,56 @@ class CharacterPosition :
                 print(f'Character {idx:03} : x:[{self.x:02}],y:[{self.y:02}] - [{character_name} the {race}]')
                 idx += 1
 
+            print("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
+
 files = ["doomdarks_day1.sna", "doomdarks_day2.sna", "doomdarks_day3.sna", "doomdarks_day4.sna", "doomdarks_day5.sna", "doomdarks_day6.sna", "doomdarks_day7.sna"]
-#mt = MapTools(file_path=file)
-#map_data = mt.read_map_data()
-#mt.draw_map_image(map_data, output_file="mymap.png")
-#mt.export_map_html(map_data, output_file="mymap.html")
+input_file = os.path.join('./game_snaps_sna/daily_snaps', files[0])
+mt = MapTools(file_path=input_file)
+map_data = mt.read_map_data()
+mt.draw_map_image(map_data, output_file="./map/png/mymap.png")
+mt.export_map_html(map_data, output_file="./map/html/mymap.html")
 
 cp = CharacterPosition()
 #cp.report_character_position(characterName='Shareth')
 for dayfile in files :
-    cp.read_all_characters_location_data(dayfile, base_address=0x4000, skip_bytes=27)
+    dayfile = os.path.join('./game_snaps_sna/daily_snaps', dayfile)
+    cp.read_all_characters_location_data(dayfile)
     cp.report_character_position(characterName='Shareth')
     #cp.report_character_position(dumpAll=True)
 cp.report_race_stats()
+
+
+'''
+Example output
+
+$ python3 doomdark_map_viewer.py 
+Character Rorthron is at location x: 5, y: 91
+Character Rorthron is at location x: 7, y: 88
+Character Rorthron is at location x: 7, y: 88
+Character Rorthron is at location x: 7, y: 88
+Character Rorthron is at location x: 7, y: 88
+Character Rorthron is at location x: 7, y: 88
+Character Rorthron is at location x: 5, y: 92
+Error - No Race Stats Generated Yet
+
+$ python3 doomdark_map_viewer.py 
+Character Luxor is at location x: 5, y: 91
+Character Luxor is at location x: 5, y: 91
+Character Luxor is at location x: 5, y: 91
+Character Luxor is at location x: 5, y: 91
+Character Luxor is at location x: 5, y: 91
+Character Luxor is at location x: 5, y: 91
+Character Luxor is at location x: 5, y: 92
+Error - No Race Stats Generated Yet
+
+$ python3 doomdark_map_viewer.py 
+Character Shareth is at location x: 56, y: 8
+Character Shareth is at location x: 51, y: 13
+Character Shareth is at location x: 47, y: 17
+Character Shareth is at location x: 47, y: 17
+Character Shareth is at location x: 47, y: 24
+Character Shareth is at location x: 47, y: 26
+Character Shareth is at location x: 47, y: 26
+Error - No Race Stats Generated Yet
+
+'''
