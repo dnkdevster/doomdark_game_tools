@@ -273,6 +273,12 @@ class GameTableDataExtract :
             thisCharacter['Recklessness'] = self.GetRecklessness(idx)
             thisCharacter['State'] = self.GetCharacterState(idx)
 
+            thisCharacter['KilledBattle128'] = self.GetKilledInBattle128(idx)
+            thisCharacter['LostBattle128'] = self.GetLostInBattle128(idx)
+            thisCharacter['ArmySize128'] = self.GetArmySize128(idx)
+            thisCharacter['FortressOwner128'] = self.GetFortressOwner128(idx)
+            
+            print(thisCharacter.keys())
             # thisCharacter['Pros'] = self.GetPositiveAttributes(idx)
             # thisCharacter['Cons'] = self.GetNegativeAttributes(idx)
 
@@ -458,6 +464,18 @@ class GameTableDataExtract :
 
         return NegativeAttributes
 
+    def GetFortressOwner128(self, index) :
+        return self.location_data[0xA080 - self.base_address + index]
+
+    def GetKilledInBattle128(self, index) :
+        return self.location_data[0x9E00 - self.base_address + index] * 5
+
+    def GetLostInBattle128(self, index) :
+        return self.location_data[0x9E80 - self.base_address + index] * 5
+
+    def GetArmySize128(self, index) :
+        return self.location_data[0x9F80 - self.base_address + index] * 5
+
     def ReturnCSVFields(self):
         return ["FullTitle", 
                 "CurrentCoords_x", "CurrentCoords_y",
@@ -469,6 +487,10 @@ class GameTableDataExtract :
                 "Recklessness",
                 "Liege",
                 "Foe",
+                "KilledBattle128",
+                "LostBattle128",
+                "ArmySize128",
+                "FortressOwner128",
                 "CharFlags1_LookDirection",
                 "CharFlags1_TimeOfDay",
                 "CharFlags2_orders",
@@ -526,7 +548,7 @@ class GameTableDataExtract :
 files = ["doomdarks_day1.sna", "doomdarks_day2.sna", "doomdarks_day3.sna", "doomdarks_day4.sna", "doomdarks_day5.sna", "doomdarks_day6.sna", "doomdarks_day7.sna"]
 input_file = os.path.join('./game_snaps_sna/daily_snaps', files[6])
 mt = MapTools(file_path=input_file)
-#map_data = mt.read_map_data()
+#map_data = mt.read_map_data()gt
 #mt.draw_map_image(map_data, output_file="./map/png/mymap.png")
 #mt.export_map_html(map_data, output_file="./map/html/mymap.html")
 
