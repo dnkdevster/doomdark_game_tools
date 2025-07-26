@@ -2,6 +2,8 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 from pathlib import Path
 import pprint
+import csv
+
 
 MAP_WIDTH = 64
 MAP_HEIGHT = 96
@@ -206,12 +208,82 @@ class MapTools :
         Path(output_file).write_text("\n".join(html))
         print(f"Map saved to {output_file}")
 
-class CharacterPosition :
+class GameTableDataExtract :
 
     def __init__(self, characterName=None, base_address=0x4000, skip_bytes=27) :
         self.main_chars = ['Luxor', 'Morkin', 'Tarithel', 'Rorthron', 'Shareth']
+        self.races = (
+            "Moonprince",
+            "Moonprince",
+            "Free",
+            "Fee",
+            "Wise",
+            "Wise",
+            "Fey",
+            "Fey",
+            "Barbarian",
+            "Barbarian",
+            "Icelord",
+            "Icelord",
+            "Fey",
+            "Giant",
+            "Heartstealer",
+            "Dwarf"
+        )
+
         self.base_address = base_address
         self.skip_bytes = skip_bytes
+        self.characterData = []
+
+    def UpdateCharacterDataDictionary(self) :
+        idx = 0
+        while(idx < 128) :
+            thisCharacter = {}
+            
+            thisCharacter['Name'] = self.get_character_name(idx)
+        
+            (x, y) = self.GetCharacterPosition(idx)
+            thisCharacter['CurrentCoords'] = {'x' : x, 'y' : y}
+
+            (x, y) = self.GetCharacterHomePosition(idx)
+            thisCharacter['HomeCoords'] = {'x' : x, 'y' : y}
+
+            race = self.get_character_race(idx)
+            thisCharacter['Race'] = race
+            thisCharacter['FullTitle'] = thisCharacter['Name'] + ' the ' + thisCharacter['Race']
+
+            army_size = self.getArmySize(idx)
+            thisCharacter['ArmySize'] = army_size
+
+            charFlags1 = self.GetCharFlags1(idx)
+            thisCharacter['CharFlags1'] = charFlags1
+
+            charFlags2 = self.GetCharFlags2(idx)
+            thisCharacter['CharFlags2'] = charFlags2
+
+            charFlags3 = self.GetCharFlags3(idx)
+            thisCharacter['CharFlags3'] = charFlags3
+
+            thisCharacter['Foe'] = self.GetCharFoe(idx)
+            thisCharacter['Liege'] = self.GetCharLiege(idx)
+
+            thisCharacter['Energy'] = self.GetEnergyLevel(idx)
+            thisCharacter['Despondency'] = self.GetDespondencyLevel(idx)
+
+            thisCharacter['Recklessness'] = self.GetRecklessness(idx)
+            thisCharacter['State'] = self.GetCharacterState(idx)
+
+            # thisCharacter['Pros'] = self.GetPositiveAttributes(idx)
+            # thisCharacter['Cons'] = self.GetNegativeAttributes(idx)
+
+            self.characterData.append(thisCharacter)
+            idx += 1
+        
+        pprint.pprint(self.characterData[5], compact=True)
+
+            
+    def GetCharIndex(self, characterName) :
+        self.charIndex = self.main_chars.index(characterName)
 
     #-------------------------------------------------------------------
     #
@@ -240,14 +312,177 @@ class CharacterPosition :
             end_idx     = name_code & 0x000F
             mid_idx     = (name_code & 0x00F0) >> 4
             start_idx   = (name_code & 0x1F00) >> 8
-            #print(f'    Char {index:03} fortress x:{fortress_x:02}, y:{fortress_y:02}, name_code:0x{name_code:04X}')
             name = Start[start_idx] + Middle[mid_idx].lower() + End[end_idx].lower()
         else:
             name = self.main_chars[index]
         return name
-            
-    def GetCharIndex(self, characterName) :
-        self.charIndex = self.main_chars.index(characterName)
+
+    def GetCharacterPosition(self, characterIndex) :
+        x = self.location_data[0xA100-  self.base_address + characterIndex]
+        y = self.location_data[0xA180 - self.base_address + characterIndex]
+        return (x,y)
+
+    def GetCharacterHomePosition(self, characterIndex) :
+        x = self.location_data[0x9C00-  self.base_address + characterIndex]
+        y = self.location_data[0x9C80 - self.base_address + characterIndex]
+        return (x,y)
+
+    def get_character_race(self, index) :
+        race_idx = self.location_data[0xA000-self.base_address+index]
+        return self.races[race_idx]
+
+    def getArmySize(self, index) :
+        army_size = self.location_data[0x9F00 - self.base_address + index] * 5
+        return army_size
+
+    def GetCharFlags1(self, index) :
+        
+        lookDirection = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+        
+        charFlags1 = {}
+        
+        flags1 = self.location_data[0xA200 - self.base_address + index]
+        
+        look_direction = flags1 & 0x7
+        time_of_day = flags1 >> 3
+        
+        charFlags1['LookDirection'] = lookDirection[look_direction]
+        
+        if time_of_day == 0x1F :
+            charFlags1['TimeOfDay'] = 'Dawn'
+        elif time_of_day == 0x00 :
+            charFlags1['TimeOfDay'] = 'Night'
+        else :
+            charFlags1['TimeOfDay'] = 0x1F - time_of_day
+
+        return charFlags1
+
+    def GetCharFlags2(self, index) :
+        
+        charFlags2 = {}
+        
+        flags2 = self.location_data[0xA280 - self.base_address + index]
+        
+        race = flags2 & 0x0F
+        orders = flags2 & 0xF0 >> 4
+        
+        charFlags2['race'] = self.races[race]
+        charFlags2['orders'] = orders
+
+        return charFlags2
+
+    def GetCharFlags3(self, index) :
+        
+        charFlags3 = {}
+        
+        flags3 = self.location_data[0xA300 - self.base_address + index]
+        
+        Loyalty = flags3 & 0x07
+        KilledFoe = Loyalty & 0x08
+        InBattle = Loyalty & 0x10
+        WonBattle = Loyalty & 0x20
+        InTunnel = Loyalty & 0x40
+        UsedObject = Loyalty & 0x80
+        
+        charFlags3['Loyalty'] = self.returnLoyaltyString(Loyalty)
+        charFlags3['KilledFoe'] = True if KilledFoe > 0 else False
+        charFlags3['InBattle'] = True if InBattle > 0 else False
+        charFlags3['WonBattle'] = True if WonBattle > 0 else False
+        charFlags3['InTunnel'] = True if InTunnel > 0 else False
+        charFlags3['UsedObject'] = True if UsedObject > 0 else False
+
+        return charFlags3
+
+    def GetCharFoe(self, index) :
+        foeCharIndex = self.location_data[0xA480 - self.base_address + index]
+        if foeCharIndex < 128 :
+            name = self.get_character_name(foeCharIndex)
+            race = self.get_character_race(foeCharIndex)
+            return name + ' the ' + race
+        else :
+            return '-'
+
+    def GetCharLiege(self, index) :
+        liegeCharIndex = self.location_data[0xA500 - self.base_address + index]
+        if liegeCharIndex < 128 :
+            name = self.get_character_name(liegeCharIndex)
+            race = self.get_character_race(liegeCharIndex)
+            return name + ' the ' + race
+        else :
+            return '-'
+
+    def GetEnergyLevel(self, index) :
+        return self.location_data[0xA380 - self.base_address + index]
+    
+    def GetDespondencyLevel(self, index) :
+        return self.location_data[0xA780 - self.base_address + index]
+
+    def GetRecklessness(self, index) :
+        return self.location_data[0xA580 - self.base_address + index]
+
+    def GetCharacterState(self, index) :
+        recklessness = self.location_data[0xA580 - self.base_address + index]
+        return 'Dead' if recklessness == 0 else 'Alive'
+
+    def GetPositiveAttributes(self, index) :
+        
+        PositiveAttributes = {}
+        
+        flags = self.location_data[0xA680 - self.base_address + index]
+
+        PositiveAttributes['Good']      = True if flags & 0x01 else False
+        PositiveAttributes['Strong']    = True if flags & 0x02 else False
+        PositiveAttributes['Forceful']  = True if flags & 0x04 else False
+        PositiveAttributes['Generous']  = True if flags & 0x08 else False
+        PositiveAttributes['Stubborn']  = True if flags & 0x10 else False
+        PositiveAttributes['Brave']     = True if flags & 0x20 else False
+        PositiveAttributes['Swift']     = True if flags & 0x40 else False
+        PositiveAttributes['Loyal']     = True if flags & 0x80 else False
+
+        return PositiveAttributes
+
+    def GetNegativeAttributes(self, index) :
+        
+        NegativeAttributes = {}
+        
+        flags = self.location_data[0xA700 - self.base_address + index]
+
+        NegativeAttributes['Evil']          = True if flags & 0x01 else False
+        NegativeAttributes['Weak']          = True if flags & 0x02 else False
+        NegativeAttributes['Reticent']      = True if flags & 0x04 else False
+        NegativeAttributes['Greedy']        = True if flags & 0x08 else False
+        NegativeAttributes['Fawning']       = True if flags & 0x10 else False
+        NegativeAttributes['Cowardly']      = True if flags & 0x20 else False
+        NegativeAttributes['Slow']          = True if flags & 0x40 else False
+        NegativeAttributes['Treacherous']   = True if flags & 0x80 else False
+
+        return NegativeAttributes
+
+    def ReturnCSVFields(self):
+        return ["FullTitle", 
+                "CurrentCoords_x", "CurrentCoords_y",
+                "ArmySize",
+                "HomeCoords_x", "HomeCoords_y",
+                "State",
+                "Energy",
+                "Despondency",
+                "Recklessness",
+                "Liege",
+                "Foe",
+                "CharFlags1_LookDirection",
+                "CharFlags1_TimeOfDay",
+                "CharFlags2_orders",
+                "CharFlags3_InBattle",
+                "CharFlags3_InTunnel",
+                "CharFlags3_KilledFoe",
+                "CharFlags3_Loyalty",
+                "CharFlags3_UsedObject",
+                "CharFlags3_WonBattle"
+        ]
+
+    def returnLoyaltyString(self, loyalty) :
+        loyalty_table = ['Moonprince', 'Heartstealer', 'Fey', 'Barbarians', 'Giants', 'Dwarfs']
+        return loyalty_table[loyalty]
 
     def read_all_characters_location_data(self, file_path):
         with open(file_path, 'rb') as f:
@@ -255,81 +490,55 @@ class CharacterPosition :
         # You can now treat `data[offset]` as memory at address `base_address + offset`
         self.location_data = data
 
-    def get_character_race(self, index) :
-        Races = (
-            "Moonprince",
-            "Moonprince",
-            "Free",
-            "Fee",
-            "Wise",
-            "Wise",
-            "Fey",
-            "Fey",
-            "Barbarian",
-            "Barbarian",
-            "Icelord",
-            "Icelord",
-            "Fey",
-            "Giant",
-            "Heartstealer",
-            "Dwarf"
-        )
-        race_idx = self.location_data[0xA000-self.base_address+index]
-
-        return Races[race_idx]
-
     def report_race_stats(self):        
         try :
             pprint.pprint(self.racestats)
         except:
             print('Error - No Race Stats Generated Yet')
 
-    def report_character_position(self, characterName=None, dumpAll=None) :
-        
-        if characterName != None :
-            charIndex = self.GetCharIndex(characterName=characterName)
-            self.x = self.location_data[0xA100-self.base_address+self.charIndex]
-            self.y = self.location_data[0xA180-self.base_address+self.charIndex]
-            print(f'Character {characterName} is at location x: {self.x}, y: {self.y}')
-        
-        elif dumpAll != None :
-            idx = 0
-            self.racestats = {}
-        
-            print("")
-            print("-------------------------------------------------------------------------")
-            print(f"All character positions for file {dayfile}")
-            print("-------------------------------------------------------------------------")
+    def flatten_dict(self, d, parent_key="", sep="_"):
+        items = {}
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.update(self.flatten_dict(v, new_key, sep=sep))
+            else:
+                items[new_key] = v
+        return items
 
-            while idx < 128 :
-                self.x = self.location_data[0xA100-self.base_address+idx]
-                self.y = self.location_data[0xA180-self.base_address+idx]
-                character_name = self.get_character_name(index=idx)
-                race = self.get_character_race(index=idx)
-                if race not in self.racestats :
-                    self.racestats[race] = 1
-                else :
-                    self.racestats[race] += 1
-                print(f'Character {idx:03} : x:[{self.x:02}],y:[{self.y:02}] - [{character_name} the {race}]')
-                idx += 1
+    def WriteToCSV(self, filename="chars.csv") :
 
-            print("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
+        # Flatten each dictionary
+        flattened = [self.flatten_dict(char) for char in self.characterData]
+
+        # Collect all unique fieldnames
+        fieldnames = set()
+        for entry in flattened:
+            fieldnames.update(entry.keys())
+        fieldnames = sorted(fieldnames)
+
+        # Write to CSV
+        with open(filename, mode="w", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=self.ReturnCSVFields(), extrasaction='ignore')
+            writer.writeheader()
+            writer.writerows(flattened)
 
 files = ["doomdarks_day1.sna", "doomdarks_day2.sna", "doomdarks_day3.sna", "doomdarks_day4.sna", "doomdarks_day5.sna", "doomdarks_day6.sna", "doomdarks_day7.sna"]
-input_file = os.path.join('./game_snaps_sna/daily_snaps', files[0])
+input_file = os.path.join('./game_snaps_sna/daily_snaps', files[6])
 mt = MapTools(file_path=input_file)
-map_data = mt.read_map_data()
-mt.draw_map_image(map_data, output_file="./map/png/mymap.png")
-mt.export_map_html(map_data, output_file="./map/html/mymap.html")
+#map_data = mt.read_map_data()
+#mt.draw_map_image(map_data, output_file="./map/png/mymap.png")
+#mt.export_map_html(map_data, output_file="./map/html/mymap.html")
 
-cp = CharacterPosition()
-#cp.report_character_position(characterName='Shareth')
+cp = GameTableDataExtract()
+cp.read_all_characters_location_data(input_file)
+cp.UpdateCharacterDataDictionary()
+cp.WriteToCSV()
+exit(0)
+
 for dayfile in files :
     dayfile = os.path.join('./game_snaps_sna/daily_snaps', dayfile)
     cp.read_all_characters_location_data(dayfile)
-    cp.report_character_position(characterName='Shareth')
-    #cp.report_character_position(dumpAll=True)
-cp.report_race_stats()
 
 
 '''
