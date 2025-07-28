@@ -11,7 +11,20 @@ files = [
         "day7.sna",
         "day8.sna",
         "day9.sna",
-        "day10.sna"]
+        "day10.sna",
+        "day11.sna",
+        "day12.sna",
+        "day13.sna",
+        "day14.sna",
+        "day15.sna",
+        "day16.sna",
+        "day17.sna",
+        "day18.sna",
+        "day19.sna",
+        "day20.sna",
+        "day21.sna",
+        "day22.sna",
+    ]
 input_file = os.path.join('./game_snaps_sna2/daily_snaps', files[6])
 # mt = MapTools(file_path=input_file)
 #map_data = mt.read_map_data()

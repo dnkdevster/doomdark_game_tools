@@ -341,8 +341,6 @@ class GameTableDataExtract :
         conn = sqlite3.connect(sqlliteDatabaseName)
         cursor = conn.cursor()
 
-        print(len(self.TodaysCharacterData[0]))
-
         # Create unified table with flattened flags
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS characters (
