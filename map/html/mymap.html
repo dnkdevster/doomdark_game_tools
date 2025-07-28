@@ -6171,5 +6171,27 @@
       tooltip.style.display = 'none';
     }
   </script>
+
+    <script>
+    fetch("movements.json")
+    .then(response => response.json())
+    .then(data => {
+        const map = document.getElementById("map");
+        for (const [day, movements] of Object.entries(data)) {
+        movements.forEach(({ name, path }, index) => {
+            const color = ['red', 'blue', 'green', 'orange', 'purple', 'gold'][index % 6];
+            path.forEach(([x, y]) => {
+            const tile = map.querySelector(`[data-x='${x}'][data-y='${y}']`);
+            if (tile) {
+                tile.style.outline = `3px solid ${color}`;
+                tile.style.outlineOffset = "-3px";
+                tile.title += `\n${name}, ${day}`;
+            }
+            });
+        });
+        }
+    });
+    </script>
+    
 </body>
 </html>
