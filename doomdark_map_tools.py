@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import pprint
 import json
+import sqlite3
 
 MAP_WIDTH = 64
 MAP_HEIGHT = 96
@@ -114,37 +115,130 @@ class MapTools :
         image.save(output_file)
         print(f"Map saved to {output_file}")
 
+
     #-------------------------------------------------------------------
     #
-    #   Draw the map as a HTML using the graphics and colours in the
+    #   Get the character names from SQL
+    #
+    #-------------------------------------------------------------------
+    def get_all_character_names(self, db_name='sqllite.db'):
+        conn = sqlite3.connect(db_name)
+        cursor = conn.cursor()
+        cursor.execute('SELECT DISTINCT name FROM characters')
+        names = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return names
+
+    #-------------------------------------------------------------------
+    #
+    #   Make sidebar
+    #
+    #-------------------------------------------------------------------
+    def build_sidebar_html(self, names):
+        html = [
+            '<div id="characterMenu" style="position: fixed; left: 0; top: 0; width: 200px; height: 100%;',
+            'background-color: #f0f0f0; padding: 10px; overflow-y: auto; z-index: 100; font-size: 16px; font-family: sans-serif">',
+            '<h3>Characters</h3>'
+        ]
+        for name in names:
+            html.append(f'<label><input type="radio" name="charToggle" value="{name}"> {name}</label><br>')
+        html.append('</div>')
+        return "\n".join(html)
+
+    #-------------------------------------------------------------------
+    #
+    #   JS toggle
+    #
+    #-------------------------------------------------------------------
+    def build_toggle_js(self):
+        return """
+    <script>
+    document.querySelectorAll('input[name="charToggle"]').forEach(btn => {
+        btn.addEventListener('change', e => {
+            const selected = e.target.value;
+            document.querySelectorAll('[id^="overlay-"]').forEach(div => {
+                div.style.display = div.id === `overlay-${selected}` ? 'block' : 'none';
+            });
+        });
+    });
+    </script>
+    """
+
+    #-------------------------------------------------------------------
+    #
+    #   Make overlay
+    #
+    #-------------------------------------------------------------------
+    def build_overlay_div(self, name, tile_size, path):
+        html = [f'<div id="overlay-{name}" style="position: absolute; top: 0; left: 0;">']
+        for day, x, y in path:
+            html.append(f"""
+            <div style="
+                position: absolute;
+                left: {x * tile_size}px;
+                top: {y * tile_size}px;
+                width: {tile_size}px;
+                height: {tile_size}px;
+                background-color: rgba(255, 0, 255, 0.5);
+                z-index: 50;"
+                title="Day {day}">
+            </div>
+            """)
+        html.append('</div>')
+        return "\n".join(html)
+
+    #-------------------------------------------------------------------
+    #
+    #   Get the character data from SQL
+    #
+    #-------------------------------------------------------------------
+    def get_character_path(self, name, db_name='sqllite.db'):
+        conn = sqlite3.connect(db_name)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT day, current_x, current_y FROM characters
+            WHERE name = ?
+            ORDER BY day ASC
+        ''', (name,))
+        path = cursor.fetchall()
+        conn.close()
+        return path  # List of tuples (day, x, y)
+
+    #-------------------------------------------------------------------
+    #
+    #   Use the data from SQL to draw an overlay
     #   terrain table.
     #
     #   This could support tunnels but I've turned it off.
     #
     #-------------------------------------------------------------------
-    def add_movement_overlay_js(self):
-        return '''
-    <script>
-    fetch("movements.json")
-    .then(response => response.json())
-    .then(data => {
-        const map = document.getElementById("map");
-        for (const [day, movements] of Object.entries(data)) {
-        movements.forEach(({ name, path }, index) => {
-            const color = ['red', 'blue', 'green', 'orange', 'purple', 'gold'][index % 6];
-            path.forEach(([x, y]) => {
-            const tile = map.querySelector(`[data-x='${x}'][data-y='${y}']`);
-            if (tile) {
-                tile.style.outline = `3px solid ${color}`;
-                tile.style.outlineOffset = "-3px";
-                tile.title += `\\n${name}, ${day}`;
-            }
-            });
-        });
-        }
-    });
-    </script>
-    '''
+    def add_movement_overlay_js(self, name):
+        path = self.get_character_path(name=name)
+        overlay = [
+            "<script>",
+            "  const pathOverlay = document.createElement('div');",
+            "  pathOverlay.style.position = 'absolute';",
+            "  pathOverlay.style.top = '0';",
+            "  pathOverlay.style.left = '0';",
+            "  pathOverlay.style.zIndex = '50';",
+            "  document.body.appendChild(pathOverlay);"
+        ]
+
+        for day, x, y in path:
+            overlay.append(f"""
+            const marker{day} = document.createElement('div');
+            marker{day}.style.position = 'absolute';
+            marker{day}.style.left = ({x} * {TILE_SIZE}) + 'px';
+            marker{day}.style.top = ({y} * {TILE_SIZE}) + 'px';
+            marker{day}.style.width = '{TILE_SIZE}px';
+            marker{day}.style.height = '{TILE_SIZE}px';
+            marker{day}.style.backgroundColor = 'rgba(255, 0, 255, 0.5)';
+            marker{day}.title = 'Day {day}';
+            pathOverlay.appendChild(marker{day});
+            """)
+
+        overlay.append("</script>")
+        return "\n".join(overlay)
 
     #-------------------------------------------------------------------
     #
@@ -156,6 +250,7 @@ class MapTools :
     #-------------------------------------------------------------------
     def export_map_html(self, map_data, output_file='map.html'):
         print(f"Creating map as HTML : {output_file}")
+        
         try:
             os.makedirs('./map/html', exist_ok=True)
         except:
@@ -165,6 +260,13 @@ class MapTools :
         width = MAP_WIDTH
         height = MAP_HEIGHT
 
+        names = self.get_all_character_names()
+        html = [self.build_sidebar_html(names)]
+
+        for name in names:
+            path = self.get_character_path(name=name)
+            html.append(self.build_overlay_div(name, TILE_SIZE, path))
+
         # Preload terrain styles
         terrain_styles = {}
         for terrain_id, (color, filename) in self.terrain.items():
@@ -172,7 +274,7 @@ class MapTools :
             style = f"background-color: rgb({r},{g},{b});"
             if filename:
                 # path = os.path.join("graphics", filename)
-                path = os.path.relpath(os.path.join("graphics", filename), os.path.dirname(output_file))
+                path = os.path.join('./graphics', filename)
                 # Use relative path so browser can load it
                 # style += f" background-image: url('{path}'); background-size: cover; background-position: center;"
                 style += (
@@ -182,7 +284,7 @@ class MapTools :
             terrain_styles[terrain_id] = style
 
         # Start building HTML
-        html = [
+        html.extend([
             "<!DOCTYPE html>",
             "<html>",
             "<head>",
@@ -196,7 +298,7 @@ class MapTools :
             "</head>",
             "<body>",
             "  <div id='map'>"
-        ]
+        ])
 
         for row in range(height):
             for col in range(width):
@@ -232,39 +334,12 @@ class MapTools :
             "      tooltip.style.display = 'none';",
             "    }",
             "  </script>"])
-        html.append(self.add_movement_overlay_js())
+        # html.append(self.add_movement_overlay_js(name))
+        html.append(self.build_toggle_js())
         html.append("</body>")
         html.append("</html>")
 
         Path(output_file).write_text("\n".join(html))
         print(f"Map saved to {output_file}")
-
-    #-------------------------------------------------------------------
-    #
-    #   Format character movement data for JSON
-    #
-    #-------------------------------------------------------------------
-    def Format_movements_for_json(self, daily_data):
-        movements = {}
-        for day_index, entries in enumerate(daily_data, start=1):
-            day_key = f"Day {day_index}"
-            movements[day_key] = []
-            for entry in entries:
-                name = entry.get("Name")
-                coords = entry.get("CurrentCoords", {})
-                movements[day_key].append({
-                    "name": name,
-                    "path": [[coords.get("x"), coords.get("y")]]
-                })
-        return movements
-
-    #-------------------------------------------------------------------
-    #
-    #   Export data to JSON
-    #
-    #-------------------------------------------------------------------
-    def ExportMovementDataToJSON(self, daily_data) :
-        Path('map/html/movements.json').write_text(json.dumps(self.Format_movements_for_json(daily_data)))
-
 
 

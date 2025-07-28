@@ -23,11 +23,11 @@ for dayfile in files :
     cp.read_all_characters_location_data(dayfile)
     cp.UpdateTodaysCharacterDataDictionary()
     cp.UpdateDayByDayCharacterData()
+    cp.WriteDayDataToSQLiteDatabase()
     # cp.WriteToCSV(filename=dayfile+'.csv')
 DailyCharData = cp.ReturnDayByDayCharacterData()
 
 input_file = os.path.join('./game_snaps_sna2', files[0])
 mt = MapTools(file_path=input_file)
 map_data = mt.read_map_data()
-mt.ExportMovementDataToJSON(DailyCharData)
 mt.export_map_html(map_data=map_data, output_file="./map/html/mymap.html")

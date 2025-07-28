@@ -1,4 +1,5 @@
 import csv
+import sqlite3
 
 class GameTableDataExtract :
 
@@ -27,22 +28,27 @@ class GameTableDataExtract :
         self.skip_bytes = skip_bytes
         self.TodaysCharacterData = []
         self.DayByDayCharacterData = []
+        self.Day = 1
 
-    def UpdateTodaysCharacterDataDictionary(self) :
+    def UpdateTodaysCharacterDataDictionary(self, limitIdx=128, ) :
+
         idx = 0
-        
+
         self.TodaysCharacterData = []
         
-        while(idx < 5) :
+        while(idx < 128) :
             thisCharacter = {}
-            
+
+            thisCharacter['ID'] = idx
+            thisCharacter['Day'] = self.Day
+
             thisCharacter['Name'] = self.get_character_name(idx)
         
             (x, y) = self.GetCharacterPosition(idx)
             thisCharacter['CurrentCoords'] = {'x' : x, 'y' : y}
 
             (x, y) = self.GetCharacterHomePosition(idx)
-            #thisCharacter['HomeCoords'] = {'x' : x, 'y' : y}
+            thisCharacter['HomeCoords'] = {'x' : x, 'y' : y}
 
             race = self.get_character_race(idx)
             thisCharacter['Race'] = race
@@ -52,30 +58,30 @@ class GameTableDataExtract :
             thisCharacter['ArmySize'] = army_size
 
             charFlags1 = self.GetCharFlags1(idx)
-            #thisCharacter['CharFlags1'] = charFlags1
+            thisCharacter['CharFlags1'] = charFlags1
 
             charFlags2 = self.GetCharFlags2(idx)
-            #thisCharacter['CharFlags2'] = charFlags2
+            thisCharacter['CharFlags2'] = charFlags2
 
             charFlags3 = self.GetCharFlags3(idx)
-            #thisCharacter['CharFlags3'] = charFlags3
+            thisCharacter['CharFlags3'] = charFlags3
 
-            #thisCharacter['Foe'] = self.GetCharFoe(idx)
-            #thisCharacter['Liege'] = self.GetCharLiege(idx)
+            thisCharacter['Foe'] = self.GetCharFoe(idx)
+            thisCharacter['Liege'] = self.GetCharLiege(idx)
 
-            #thisCharacter['Energy'] = self.GetEnergyLevel(idx)
-            #thisCharacter['Despondency'] = self.GetDespondencyLevel(idx)
+            thisCharacter['Energy'] = self.GetEnergyLevel(idx)
+            thisCharacter['Despondency'] = self.GetDespondencyLevel(idx)
 
-            #thisCharacter['Recklessness'] = self.GetRecklessness(idx)
+            thisCharacter['Recklessness'] = self.GetRecklessness(idx)
             thisCharacter['State'] = self.GetCharacterState(idx)
 
-            #thisCharacter['KilledBattle128'] = self.GetKilledInBattle128(idx)
-            #thisCharacter['LostBattle128'] = self.GetLostInBattle128(idx)
-            #thisCharacter['ArmySize128'] = self.GetArmySize128(idx)
-            #thisCharacter['FortressOwner128'] = self.GetFortressOwner128(idx)
+            thisCharacter['KilledBattle128'] = self.GetKilledInBattle128(idx)
+            thisCharacter['LostBattle128'] = self.GetLostInBattle128(idx)
+            thisCharacter['ArmySize128'] = self.GetArmySize128(idx)
+            thisCharacter['FortressOwner128'] = self.GetFortressOwner128(idx)
             
-            # thisCharacter['Pros'] = self.GetPositiveAttributes(idx)
-            # thisCharacter['Cons'] = self.GetNegativeAttributes(idx)
+            thisCharacter['Pros'] = self.GetPositiveAttributes(idx)
+            thisCharacter['Cons'] = self.GetNegativeAttributes(idx)
 
             self.TodaysCharacterData.append(thisCharacter)
             idx += 1
@@ -85,6 +91,7 @@ class GameTableDataExtract :
 
     def UpdateDayByDayCharacterData(self):
         self.DayByDayCharacterData.append(self.TodaysCharacterData)
+        self.Day += 1
 
     def ReturnDayByDayCharacterData(self):
         return self.DayByDayCharacterData
@@ -294,6 +301,7 @@ class GameTableDataExtract :
                 "FortressOwner128",
                 "CharFlags1_LookDirection",
                 "CharFlags1_TimeOfDay",
+                "CharFlags2_race",
                 "CharFlags2_orders",
                 "CharFlags3_InBattle",
                 "CharFlags3_InTunnel",
@@ -328,6 +336,100 @@ class GameTableDataExtract :
             else:
                 items[new_key] = v
         return items
+
+    def WriteDayDataToSQLiteDatabase(self, sqlliteDatabaseName='sqllite.db') :
+        conn = sqlite3.connect(sqlliteDatabaseName)
+        cursor = conn.cursor()
+
+        print(len(self.TodaysCharacterData[0]))
+
+        # Create unified table with flattened flags
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS characters (
+                id INTEGER,
+                day INTEGER,
+                name TEXT,
+                race TEXT,
+                full_title TEXT,
+                current_x INTEGER,
+                current_y INTEGER,
+                home_x INTEGER,
+                home_y INTEGER,
+                army_size INTEGER,
+                foe TEXT,
+                liege TEXT,
+                energy INTEGER,
+                despondency INTEGER,
+                recklessness INTEGER,
+                state TEXT,
+                killed_battle_128 BOOLEAN,
+                lost_battle_128 BOOLEAN,
+                army_size_128 INTEGER,
+                fortress_owner_128 TEXT,
+                flags1_LookDirection TEXT,
+                flags1_TimeOfDay INTEGER,
+                flags2_race TEXT,
+                flags2_orders INTEGER,
+                flags3_InBattle BOOLEAN,
+                flags3_InTunnel BOOLEAN,
+                flags3_KilledFoe BOOLEAN,
+                flags3_Loyalty TEXT,
+                flags3_UsedObject BOOLEAN,
+                flags3_WonBattle BOOLEAN,
+                PRIMARY KEY(id, day)
+            )
+        ''')
+
+        for c in self.TodaysCharacterData :
+            # Flatten nested flags into top-level fields
+            c['flags1_LookDirection'] = c['CharFlags1'].get('LookDirection', None)
+            c['flags1_TimeOfDay']     = c['CharFlags1'].get('TimeOfDay', None)
+            c['flags2_race']          = c['CharFlags2'].get('race', None)
+            c['flags2_orders']        = c['CharFlags2'].get('orders', None)
+            c['flags3_InBattle']      = c['CharFlags3'].get('InBattle', None)
+            c['flags3_InTunnel']      = c['CharFlags3'].get('InTunnel', None)
+            c['flags3_KilledFoe']     = c['CharFlags3'].get('KilledFoe', None)
+            c['flags3_Loyalty']       = c['CharFlags3'].get('Loyalty', None)
+            c['flags3_UsedObject']    = c['CharFlags3'].get('UsedObject', None)
+            c['flags3_WonBattle']     = c['CharFlags3'].get('WonBattle', None)
+
+            cursor.execute('''
+                INSERT OR IGNORE INTO characters VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                c['ID'],
+                c['Day'],
+                c['Name'],
+                c['Race'],
+                c['FullTitle'],
+                c['CurrentCoords']['x'],
+                c['CurrentCoords']['y'],
+                c['HomeCoords']['x'],
+                c['HomeCoords']['y'],
+                c['ArmySize'],
+                c['Foe'],
+                c['Liege'],
+                c['Energy'],
+                c['Despondency'],
+                c['Recklessness'],
+                c['State'],
+                c['KilledBattle128'],
+                c['LostBattle128'],
+                c['ArmySize128'],
+                c['FortressOwner128'],
+                c['flags1_LookDirection'],
+                c['flags1_TimeOfDay'],
+                c['flags2_race'],
+                c['flags2_orders'],
+                c['flags3_InBattle'],
+                c['flags3_InTunnel'],
+                c['flags3_KilledFoe'],
+                c['flags3_Loyalty'],
+                c['flags3_UsedObject'],
+                c['flags3_WonBattle']
+            ))
+
+        conn.commit()
+        conn.close()
 
     def WriteToCSV(self, filename="chars.csv") :
 
