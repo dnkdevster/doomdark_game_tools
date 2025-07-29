@@ -75,6 +75,7 @@ class GameTableDataExtract :
             thisCharacter['Recklessness'] = self.GetRecklessness(idx)
             thisCharacter['State'] = self.GetCharacterState(idx)
 
+            thisCharacter['BattleOpponent'] = self.getBattleOpponent(idx)
             thisCharacter['KilledBattle128'] = self.GetKilledInBattle128(idx)
             thisCharacter['LostBattle128'] = self.GetLostInBattle128(idx)
             thisCharacter['ArmySize128'] = self.GetArmySize128(idx)
@@ -149,6 +150,10 @@ class GameTableDataExtract :
         army_size = self.location_data[0x9F00 - self.base_address + index] * 5
         return army_size
 
+    def getBattleOpponent(self, index) :
+        opponent = self.location_data[0xA400 - self.base_address + index]
+        return self.get_character_name(opponent)
+
     def GetCharFlags1(self, index) :
         
         lookDirection = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
@@ -191,12 +196,12 @@ class GameTableDataExtract :
         
         flags3 = self.location_data[0xA300 - self.base_address + index]
         
-        Loyalty = flags3 & 0x07
-        KilledFoe = Loyalty & 0x08
-        InBattle = Loyalty & 0x10
-        WonBattle = Loyalty & 0x20
-        InTunnel = Loyalty & 0x40
-        UsedObject = Loyalty & 0x80
+        Loyalty     = (flags3 & 0x07)
+        KilledFoe   = (flags3 & 0x08) >> 3
+        InBattle    = (flags3 & 0x10) >> 4
+        WonBattle   = (flags3 & 0x20) >> 5
+        InTunnel    = (flags3 & 0x40) >> 6
+        UsedObject  = (flags3 & 0x80) >> 7
         
         charFlags3['Loyalty'] = self.returnLoyaltyString(Loyalty)
         charFlags3['KilledFoe'] = True if KilledFoe > 0 else False
@@ -360,6 +365,7 @@ class GameTableDataExtract :
                 despondency INTEGER,
                 recklessness INTEGER,
                 state TEXT,
+                battle_opponent TEXT,
                 killed_battle_128 BOOLEAN,
                 lost_battle_128 BOOLEAN,
                 army_size_128 INTEGER,
@@ -392,7 +398,7 @@ class GameTableDataExtract :
             c['flags3_WonBattle']     = c['CharFlags3'].get('WonBattle', None)
 
             cursor.execute('''
-                INSERT OR IGNORE INTO characters VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO characters VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 c['ID'],
                 c['Day'],
@@ -410,6 +416,7 @@ class GameTableDataExtract :
                 c['Despondency'],
                 c['Recklessness'],
                 c['State'],
+                c['BattleOpponent'],
                 c['KilledBattle128'],
                 c['LostBattle128'],
                 c['ArmySize128'],
